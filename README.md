@@ -1,16 +1,16 @@
 # Integrity Risk Income Analysis
 
-## Descripción del Proyecto
-Este repositorio alberga un estudio descriptivo y un análisis transversal del **Índice IRIS de SCImago** (Integrity Risk Index), evaluado a través de diferentes grupos de ingreso y países. El proyecto tiene como principal objetivo explorar y comprender cuantitativamente cómo se distribuye y varía el riesgo de integridad científica a nivel global, dependiendo del nivel de ingresos y características socioeconómicas de cada nación.
+## Project Description
+This repository hosts a descriptive study and cross-sectional analysis of the **SCImago IRIS Index** (Integrity Risk Index), evaluated across different income groups and countries. The main objective of the project is to quantitatively explore and understand how scientific integrity risk is distributed and varies globally, depending on the income level and socioeconomic characteristics of each nation.
 
-Los datos originales y métricas provienen de la plataforma oficial: [SCImago IRIS](https://www.scimagoiris.com/).
+The original data and metrics come from the official platform: [SCImago IRIS](https://www.scimagoiris.com/).
 
-## Estado Actual y Metodología
-Hasta el momento, el proyecto ha completado su fase inicial de recolección y estructuración de los datos:
-- **Extracción de datos (Web Scraping / API):** Se desarrolló código en Python (utilizando el entorno de Google Colab) para consultar, extraer y limpiar los datos del índice directamente desde la página web de SCImago IRIS.
-- **Almacenamiento y Estructuración:** Los datos brutos extraídos han sido consolidados y guardados localmente en formato CSV (`Scimago_IRIS_Index_Data.csv`). Esta base de datos estructurada será el principal insumo para los futuros análisis estadísticos, modelados y visualizaciones transversales.
+## Current Status and Methodology
+So far, the project has completed its initial phase of data collection and structuring:
+- **Data Extraction (Web Scraping / API):** Python code was developed (using the Google Colab environment) to query, extract, and clean the index data directly from the SCImago IRIS website.
+- **Storage and Structuring:** The raw extracted data has been consolidated and saved locally in CSV format (`Scimago_IRIS_Index_Data.csv`). This structured database will serve as the main input for future statistical analysis, modeling, and cross-sectional visualizations.
 
-## Contenido del Repositorio
-- `integrity_risk_extraction_data.py` / `Integrity_Risk_Extraction_Data.ipynb`: Scripts de Python y Jupyter Notebooks utilizados para la extracción inicial y procesamiento de información desde la web.
-- `Scimago_IRIS_Index_Data.csv`: Conjunto de datos final resultante y procesado tras la extracción.
-- `README.md`: Este archivo, que documenta el propósito, evolución y estructura general del proyecto.
+## Repository Contents
+- `integrity_risk_extraction_data.py` / `Integrity_Risk_Extraction_Data.ipynb`: Python scripts and Jupyter Notebooks used for the initial extraction and processing of information from the web.
+- `Scimago_IRIS_Index_Data.csv`: The final processed dataset resulting from the extraction.
+- `README.md`: This file, which documents the purpose, evolution, and general structure of the project.
