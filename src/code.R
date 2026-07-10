@@ -53,8 +53,8 @@ data <- read_csv(
   clean_names()
 
 # ============================================================
-# BLOQUE 1
-# Panorama global del riesgo institucional de integridad científica
+# BLOCK 1
+# Global overview of institutional research integrity risk
 # Dataset: SCImago IRIS
 # Objeto de entrada esperado: data
 # ============================================================
@@ -64,22 +64,22 @@ data <- read_csv(
 
 # Carpetas de salida -----------------------------------------
 
-# Definimos la ruta base absoluta exacta que solicitaste (usando /)
+# Define base path
 
 # Creamos la carpeta principal 'outputs' y sus subcarpetas necesarias
 
-# Tema gráfico para figuras (Estilo Q1: Science/Nature) ------
+# Graphical Theme (Q1: Science/Nature style) ------
 
 
 # ============================================================
-# 1. Limpieza básica y control de tipos
+# 1. Basic cleaning and type checking
 # ============================================================
 
 # Revisar nombres
 names(data)
 glimpse(data)
 
-# Variables numéricas esperadas
+# Expected numeric variables
 numeric_vars <- c(
   "sir_rank", "overall", "output", "multi_affiliation", "retracted_output",
   "self_citation", "discontinued_journals_output", "hyperauthored_output",
@@ -87,19 +87,19 @@ numeric_vars <- c(
   "redundant_output"
 )
 
-# Verificar si faltan columnas esperadas
+# Check for missing columns
 missing_numeric_vars <- setdiff(numeric_vars, names(data))
 
 if (length(missing_numeric_vars) > 0) {
   stop(
     paste(
-      "Estas columnas esperadas no están en el dataset:",
+      "These expected columns are not in the dataset:",
       paste(missing_numeric_vars, collapse = ", ")
     )
   )
 }
 
-# Limpieza
+# Cleaning
 data_clean <- data |>
   mutate(
     across(
@@ -116,13 +116,13 @@ data_clean <- data |>
     )
   )
 
-# Guardar base limpia
+# Save clean dataset
 write_csv(
   data_clean,
   file.path(base_dir, "tables/block1_data_clean.csv")
 )
 
-# Resumen de valores perdidos
+# Missing values summary
 missing_summary <- data_clean |>
   summarise(across(everything(), ~ sum(is.na(.x)))) |>
   pivot_longer(
@@ -132,7 +132,6 @@ missing_summary <- data_clean |>
   ) |>
   arrange(desc(missing_n))
 
-missing_summary
 
 write_csv(
   missing_summary,
@@ -140,7 +139,7 @@ write_csv(
 )
 
 # ============================================================
-# 2. Resumen global de la base
+# 2. Global dataset summary
 # ============================================================
 
 global_summary <- data_clean |>
@@ -162,14 +161,13 @@ global_summary <- data_clean |>
     output_max = max(output, na.rm = TRUE)
   )
 
-global_summary
 
 write_csv(
   global_summary,
   file.path(base_dir, "tables/block1_global_summary.csv")
 )
 
-# Tabla 1 resumida para manuscrito
+# Summary Table 1 for manuscript
 table_1_global <- tibble(
   indicator = c(
     "Institutions", "Unique institutions", "Countries",
@@ -185,7 +183,6 @@ table_1_global <- tibble(
   )
 )
 
-table_1_global
 
 write_csv(
   table_1_global,
@@ -193,7 +190,7 @@ write_csv(
 )
 
 # ============================================================
-# 3. Distribución global por categoría de riesgo
+# 3. Global distribution by risk category
 # ============================================================
 
 risk_distribution <- data_clean |>
@@ -204,14 +201,13 @@ risk_distribution <- data_clean |>
     risk_label = str_to_title(as.character(risk))
   )
 
-risk_distribution
 
 write_csv(
   risk_distribution,
   file.path(base_dir, "tables/block1_risk_distribution.csv")
 )
 
-# Figura: distribución de riesgo
+# Figure: risk distribution
 fig_risk_distribution <- risk_distribution |>
   ggplot(aes(x = risk, y = percent, fill = risk)) +
   geom_col(width = 0.6, alpha = 0.9, color = "black", linewidth = 0.3) +
@@ -221,7 +217,7 @@ fig_risk_distribution <- risk_distribution |>
     size = 3.5,
     lineheight = 0.9
   ) +
-  # Paleta de colores oficial de SCImago IRIS extraída de la web
+  # Official SCImago IRIS color palette from website
   scale_fill_manual(
     values = c(
       "very low" = "#9EC753",     # Verde
@@ -252,16 +248,15 @@ fig_risk_distribution <- risk_distribution |>
   ) +
   theme_paper()
 
-fig_risk_distribution
 
-# ggsave(
-#   filename = "outputs/figures/block1_risk_distribution.png",
-#   plot = fig_risk_distribution,
-#   width = 7, height = 5, dpi = 300
-# )
+ggsave(
+  filename = "outputs/figures/block1_risk_distribution.png",
+  plot = fig_risk_distribution,
+  width = 7, height = 5, dpi = 300
+)
 
 # ============================================================
-# 4. Países con más instituciones
+# 4. Countries with the most institutions
 # ============================================================
 
 top_countries_by_institutions <- data_clean |>
@@ -276,7 +271,7 @@ write_csv(
 
 fig_top_countries <- top_countries_by_institutions |>
   mutate(country = fct_reorder(country, n_institutions)) |>
-  # Color sólido azul científico. Revistas Q1 evitan gradientes si no mapean variables continuas útiles.
+  # Solid scientific blue. Q1 journals avoid gradients unless mapping useful continuous variables.
   ggplot(aes(x = country, y = n_institutions)) +
   geom_col(width = 0.65, fill = "#3C5488FF", alpha = 0.9) +
   geom_text(
@@ -295,18 +290,17 @@ fig_top_countries <- top_countries_by_institutions |>
     caption = "Source: SCImago IRIS dataset."
   ) +
   theme_paper() +
-  theme(axis.line.y = element_blank(), axis.ticks.y = element_blank()) # Aspecto más limpio en barras horizontales
+  theme(axis.line.y = element_blank(), axis.ticks.y = element_blank()) # Cleaner look for horizontal bars
 
-fig_top_countries
 
-# ggsave(
-#   filename = "outputs/figures/block1_top20_countries_by_institutions.png",
-#   plot = fig_top_countries,
-#   width = 7, height = 6, dpi = 300
-# )
+ggsave(
+  filename = "outputs/figures/block1_top20_countries_by_institutions.png",
+  plot = fig_top_countries,
+  width = 7, height = 6, dpi = 300
+)
 
 # ============================================================
-# 5. Resumen agregado por país
+# 5. Aggregated summary by country
 # ============================================================
 
 country_summary <- data_clean |>
@@ -342,7 +336,7 @@ write_csv(
 )
 
 # ============================================================
-# 6. Países con mayor proporción de riesgo significativo
+# 6. Countries with highest proportion of significant risk
 # ============================================================
 
 countries_significant_risk_min10 <- country_summary |>
@@ -357,7 +351,7 @@ write_csv(
 
 fig_significant_risk_countries <- countries_significant_risk_min10 |>
   mutate(country = fct_reorder(country, pct_significant)) |>
-  # Color rojo sólido para resaltar el "riesgo significativo"
+  # Solid red to highlight "significant risk"
   ggplot(aes(x = country, y = pct_significant)) +
   geom_col(width = 0.65, fill = "#E64B35FF", alpha = 0.9) +
   geom_text(
@@ -380,16 +374,15 @@ fig_significant_risk_countries <- countries_significant_risk_min10 |>
   theme_paper() +
   theme(axis.line.y = element_blank(), axis.ticks.y = element_blank())
 
-fig_significant_risk_countries
 
-# ggsave(
-#   filename = "outputs/figures/block1_top20_countries_significant_risk_min10.png",
-#   plot = fig_significant_risk_countries,
-#   width = 8, height = 6, dpi = 300
-# )
+ggsave(
+  filename = "outputs/figures/block1_top20_countries_significant_risk_min10.png",
+  plot = fig_significant_risk_countries,
+  width = 8, height = 6, dpi = 300
+)
 
 # ============================================================
-# 7. Mapa mundial con correcciones ISO3
+# 7. World map with ISO3 corrections
 # ============================================================
 
 world_raw <- ne_countries(
@@ -447,7 +440,7 @@ map_check_summary <- tibble(
 write_csv(map_check_summary, file.path(base_dir, "tables/block1_map_check_summary.csv"))
 
 # ============================================================
-# 8. Mapa recomendado para manuscrito
+# 8. Recommended map for manuscript
 # ============================================================
 
 map_data_min10 <- map_data |>
@@ -470,10 +463,10 @@ fig_world_mean_overall_min10_publication <- map_data_min10 |>
   ggplot() +
   geom_sf(
     aes(fill = mean_overall_plot),
-    color = "white", # Bordes blancos para aspecto más pulido
+    color = "white", # White borders for a polished look
     linewidth = 0.2
   ) +
-  # Se cambió a inferno como solicitaste
+  # Changed to inferno as requested
   scale_fill_viridis_c(
     option = "inferno",
     na.value = "grey90",
@@ -495,21 +488,20 @@ fig_world_mean_overall_min10_publication <- map_data_min10 |>
     plot.margin = margin(15, 15, 15, 15)
   )
 
-fig_world_mean_overall_min10_publication
 
-# ggsave(
-#   filename = "outputs/figures/figure_world_mean_overall_min10_publication.png",
-#   plot = fig_world_mean_overall_min10_publication,
-#   width = 10, height = 6, dpi = 300
-# )
-# ggsave(
-#   filename = "outputs/figures/figure_world_mean_overall_min10_publication.pdf",
-#   plot = fig_world_mean_overall_min10_publication,
-#   width = 10, height = 6
-# )
+ggsave(
+  filename = "outputs/figures/figure_world_mean_overall_min10_publication.png",
+  plot = fig_world_mean_overall_min10_publication,
+  width = 10, height = 6, dpi = 300
+)
+ggsave(
+  filename = "outputs/figures/figure_world_mean_overall_min10_publication.pdf",
+  plot = fig_world_mean_overall_min10_publication,
+  width = 10, height = 6
+)
 
 # ============================================================
-# 9. Mapa recomendado como suplemento o figura secundaria
+# 9. Recommended map for supplement or secondary figure
 # ============================================================
 
 fig_world_pct_significant_min10_supplement <- map_data_min10 |>
@@ -541,21 +533,20 @@ fig_world_pct_significant_min10_supplement <- map_data_min10 |>
     plot.margin = margin(15, 15, 15, 15)
   )
 
-fig_world_pct_significant_min10_supplement
 
-# ggsave(
-#   filename = "outputs/figures/figure_s1_world_pct_significant_min10.png",
-#   plot = fig_world_pct_significant_min10_supplement,
-#   width = 10, height = 6, dpi = 300
-# )
-# ggsave(
-#   filename = "outputs/figures/figure_s1_world_pct_significant_min10.pdf",
-#   plot = fig_world_pct_significant_min10_supplement,
-#   width = 10, height = 6
-# )
+ggsave(
+  filename = "outputs/figures/figure_s1_world_pct_significant_min10.png",
+  plot = fig_world_pct_significant_min10_supplement,
+  width = 10, height = 6, dpi = 300
+)
+ggsave(
+  filename = "outputs/figures/figure_s1_world_pct_significant_min10.pdf",
+  plot = fig_world_pct_significant_min10_supplement,
+  width = 10, height = 6
+)
 
 # ============================================================
-# 11. Exportar lista de archivos principales generados
+# 11. Export list of generated main files
 # ============================================================
 
 generated_files <- tibble(
@@ -572,12 +563,12 @@ generated_files <- tibble(
 )
 write_csv(generated_files, file.path(base_dir, "tables/block1_generated_files.csv"))
 
-# Fin del Bloque 1
+# End of Block 1
 
 # ============================================================
-# BLOQUE 2: Perfiles institucionales de riesgo
-# PCA + clustering + heatmap de perfiles
-# Dataset base: data_clean
+# BLOCK 2: Institutional risk profiles
+# PCA + clustering + profile heatmap
+# Base dataset: data_clean
 # ============================================================
 
 
@@ -586,15 +577,15 @@ write_csv(generated_files, file.path(base_dir, "tables/block1_generated_files.cs
 
 
 # ------------------------------------------------------------
-# Directorios de salida absolutos y Tema Gráfico Q1
+# Output directories and Q1 Graphical Theme
 # ------------------------------------------------------------
 
 
-# Crear carpetas de salida
+# Create output folders
 
-# Tema gráfico Q1
+# Q1 Graphical Theme
 
-# Paleta oficial SCImago IRIS para el riesgo
+# Official SCImago IRIS risk palette
 iris_colors <- c(
   "very low" = "#9EC753",
   "low" = "#E3CE47",
@@ -603,7 +594,7 @@ iris_colors <- c(
 )
 
 # ------------------------------------------------------------
-# 1. Definir indicadores IRIS que entran al análisis de perfiles
+# 1. Define IRIS indicators for profile analysis
 # ------------------------------------------------------------
 
 risk_indicator_vars <- c(
@@ -631,7 +622,7 @@ indicator_labels <- c(
 )
 
 # ------------------------------------------------------------
-# 2. Preparar base analítica
+# 2. Prepare analytical dataset
 # ------------------------------------------------------------
 
 block2_data <- data_clean |>
@@ -685,7 +676,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 3. Winsorización
+# 3. Winsorization
 # ------------------------------------------------------------
 
 winsorize_vec <- function(x, probs = c(0.01, 0.99)) {
@@ -759,7 +750,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 4. Matriz de correlación entre indicadores
+# 4. Correlation matrix between indicators
 # ------------------------------------------------------------
 
 cor_mat <- cor(
@@ -789,7 +780,7 @@ fig_cor_heatmap <- cor_df |>
   ggplot(aes(x = indicator_1_label, y = indicator_2_label, fill = spearman_r)) +
   geom_tile(color = "white", linewidth = 0.5) +
   scale_fill_gradient2(
-    low = "#3C5488FF", # Azul científico
+    low = "#3C5488FF", # Scientific blue
     mid = "white",
     high = "#E64B35FF", # Rojo científico
     midpoint = 0,
@@ -809,16 +800,15 @@ fig_cor_heatmap <- cor_df |>
     legend.key.width = unit(1.5, "cm")
   )
 
-fig_cor_heatmap
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/block2_correlation_heatmap.png"),
-#   plot = fig_cor_heatmap,
-#   width = 8, height = 7, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/block2_correlation_heatmap.png"),
+  plot = fig_cor_heatmap,
+  width = 8, height = 7, dpi = 300
+)
 
 # ------------------------------------------------------------
-# 5. PCA sobre indicadores IRIS estandarizados
+# 5. PCA on standardized IRIS indicators
 # ------------------------------------------------------------
 
 pca_fit <- prcomp(
@@ -888,15 +878,14 @@ fig_pca_scree <- pca_variance |>
   ) +
   theme_paper()
 
-fig_pca_scree
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/block2_pca_scree_plot.png"),
-#   plot = fig_pca_scree,
-#   width = 7, height = 5, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/block2_pca_scree_plot.png"),
+  plot = fig_pca_scree,
+  width = 7, height = 5, dpi = 300
+)
 
-# PCA scatter plot (Colores IRIS Oficiales)
+# PCA scatter plot (Official IRIS Colors)
 fig_pca_risk <- pca_scores |>
   ggplot(aes(x = PC1, y = PC2, color = risk)) +
   geom_point(alpha = 0.7, size = 1.8, stroke = 0) +
@@ -911,16 +900,15 @@ fig_pca_risk <- pca_scores |>
   theme_paper() +
   theme(legend.position = "bottom")
 
-fig_pca_risk
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/block2_pca_by_risk_category.png"),
-#   plot = fig_pca_risk,
-#   width = 8, height = 6, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/block2_pca_by_risk_category.png"),
+  plot = fig_pca_risk,
+  width = 8, height = 6, dpi = 300
+)
 
 # ------------------------------------------------------------
-# 6. Diagnóstico para elegir número de clusters
+# 6. Diagnostics to choose number of clusters
 # ------------------------------------------------------------
 
 set.seed(2026)
@@ -969,16 +957,15 @@ fig_k_diagnostics_silhouette <- k_diagnostics |>
   theme_paper()
 
 fig_k_diagnostics <- fig_k_diagnostics_wss / fig_k_diagnostics_silhouette
-fig_k_diagnostics
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/block2_k_diagnostics.png"),
-#   plot = fig_k_diagnostics,
-#   width = 8, height = 8, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/block2_k_diagnostics.png"),
+  plot = fig_k_diagnostics,
+  width = 8, height = 8, dpi = 300
+)
 
 # ------------------------------------------------------------
-# 7. Clustering final
+# 7. Final clustering
 # ------------------------------------------------------------
 
 k_final <- 5
@@ -1006,7 +993,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 8-10. Resumen de perfiles e indicadores dominantes
+# 8-10. Summary of profiles and dominant indicators
 # ------------------------------------------------------------
 
 cluster_summary <- block2_clustered |>
@@ -1061,24 +1048,24 @@ cluster_dominant_summary <- cluster_dominant_indicators |>
 write_csv(cluster_dominant_summary, file.path(base_dir, "tables/block2_cluster_dominant_summary.csv"))
 
 # ------------------------------------------------------------
-# 11. Heatmap de perfiles institucionales
+# 11. Institutional profiles heatmap
 # ------------------------------------------------------------
 
 fig_cluster_heatmap <- cluster_indicator_profiles_long |>
   ggplot(aes(x = indicator_label, y = profile, fill = mean_z)) +
   geom_tile(color = "white", linewidth = 0.8) +
   geom_text(
-    # Evaluamos el contraste directamente dentro de aes() para mayor seguridad
+    # Evaluate contrast directly inside aes() for safety
     aes(
       label = round(mean_z, 2),
       color = abs(mean_z) > 1.2 
     ),
     size = 3.5
   ) +
-  # Forzamos los colores del texto según la evaluación anterior
+  # Force text colors based on the previous evaluation
   scale_color_manual(
     values = c("FALSE" = "black", "TRUE" = "white"),
-    guide = "none" # Ocultamos esta sub-leyenda
+    guide = "none" # Hide this sub-legend
   ) +
   scale_fill_gradient2(
     low = "#2166AC",       
@@ -1086,9 +1073,9 @@ fig_cluster_heatmap <- cluster_indicator_profiles_long |>
     high = "#B2182B",      
     midpoint = 0, 
     limits = c(-2, 2),
-    # Forzamos los cortes específicos en la leyenda
+    # Force specific breaks in the legend
     breaks = c(-2, -1, 0, 1, 2),
-    # Modificamos las etiquetas visuales añadiendo "menor o igual" y "mayor o igual"
+    # Modify visual labels adding "less than or equal" and "greater than or equal"
     labels = c("\u2264 -2", "-1", "0", "1", "\u2265 2"), 
     oob = scales::squish,  
     name = "Mean z-score"
@@ -1107,16 +1094,15 @@ fig_cluster_heatmap <- cluster_indicator_profiles_long |>
     legend.key.width = unit(2, "cm")
   )
 
-fig_cluster_heatmap
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/block2_cluster_profile_heatmap.png"),
-#   plot = fig_cluster_heatmap,
-#   width = 10, height = 6, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/block2_cluster_profile_heatmap.png"),
+  plot = fig_cluster_heatmap,
+  width = 10, height = 6, dpi = 300
+)
 
 # ------------------------------------------------------------
-# 12. PCA coloreado por perfiles
+# 12. PCA colored by profiles
 # ------------------------------------------------------------
 
 pca_scores_clustered <- pca_scores |>
@@ -1124,15 +1110,15 @@ pca_scores_clustered <- pca_scores |>
 
 fig_pca_clusters <- pca_scores_clustered |>
   ggplot(aes(x = PC1, y = PC2, color = profile)) +
-  # Aumenté ligeramente el alpha a 0.8 para que los colores se vean más sólidos
+  # Slightly increased alpha to 0.8 for more solid colors
   geom_point(alpha = 0.8, size = 1.8, stroke = 0) +
-  # Paleta Okabe-Ito: Altísimo contraste, recomendada por Nature Methods
+  # Okabe-Ito palette: High contrast, recommended by Nature Methods
   scale_color_manual(values = c(
-    "Profile 1" = "#0072B2", # Azul oscuro vibrante
-    "Profile 2" = "#D55E00", # Rojo teja / Bermellón
-    "Profile 3" = "#009E73", # Verde esmeralda intenso
-    "Profile 4" = "#CC79A7", # Púrpura / Magenta suave
-    "Profile 5" = "#E69F00"  # Naranja dorado
+    "Profile 1" = "#0072B2", # Vibrant dark blue
+    "Profile 2" = "#D55E00", # Tile red / Vermilion
+    "Profile 3" = "#009E73", # Intense emerald green
+    "Profile 4" = "#CC79A7", # Soft purple / Magenta
+    "Profile 5" = "#E69F00"  # Golden orange
   )) +
   labs(
     title = "PCA projection of institutional risk profiles",
@@ -1147,16 +1133,15 @@ fig_pca_clusters <- pca_scores_clustered |>
     legend.title = element_text(face = "bold")
   )
 
-fig_pca_clusters
 
-  # ggsave(
-#   filename = file.path(base_dir, "figures/block2_pca_clusters.png"),
-#   plot = fig_pca_clusters,
-#   width = 8, height = 6, dpi = 300
-# )
+  ggsave(
+  filename = file.path(base_dir, "figures/block2_pca_clusters.png"),
+  plot = fig_pca_clusters,
+  width = 8, height = 6, dpi = 300
+)
 
 # ------------------------------------------------------------
-# 13. Distribución de categorías IRIS por perfil
+# 13. Distribution of IRIS categories by profile
 # ------------------------------------------------------------
 
 cluster_risk_distribution <- block2_clustered |>
@@ -1174,7 +1159,7 @@ fig_cluster_risk_distribution <- cluster_risk_distribution |>
   ggplot(aes(x = profile, y = percent, fill = risk)) +
   geom_col(position = "fill", width = 0.6, color = "black", linewidth = 0.3) +
   scale_y_continuous(labels = percent_format(), expand = expansion(mult = c(0, 0))) +
-  scale_fill_manual(values = iris_colors) + # Paleta oficial SCImago
+  scale_fill_manual(values = iris_colors) + # Official SCImago palette
   labs(
     title = "IRIS risk categories across institutional profiles",
     x = NULL, y = "Proportion of institutions",
@@ -1184,16 +1169,15 @@ fig_cluster_risk_distribution <- cluster_risk_distribution |>
   theme_paper() +
   theme(legend.position = "bottom")
 
-fig_cluster_risk_distribution
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/block2_risk_categories_by_profile.png"),
-#   plot = fig_cluster_risk_distribution,
-#   width = 8, height = 6, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/block2_risk_categories_by_profile.png"),
+  plot = fig_cluster_risk_distribution,
+  width = 8, height = 6, dpi = 300
+)
 
 # ============================================================
-# BLOQUE 3: Contexto nacional y capacidad científica
+# BLOCK 3: National context and scientific capacity
 # ============================================================
 
 )
@@ -1203,14 +1187,14 @@ fig_cluster_risk_distribution
 
 
 # ------------------------------------------------------------
-# Directorios de salida absolutos y Tema Gráfico Q1
+# Output directories and Q1 Graphical Theme
 # ------------------------------------------------------------
 
 
 
 
 # ------------------------------------------------------------
-# 1. Descargar indicadores nacionales del Banco Mundial
+# 1. Download World Bank national indicators
 # ------------------------------------------------------------
 
 start_year <- 2015
@@ -1236,7 +1220,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 2. Último dato disponible por país e indicador
+# 2. Latest available data by country and indicator
 # ------------------------------------------------------------
 
 wdi_countries <- wdi_raw |>
@@ -1293,7 +1277,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 3. Cobertura de emparejamiento IRIS + World Bank
+# 3. IRIS + World Bank matching coverage
 # ------------------------------------------------------------
 
 country_context_iris <- country_summary |>
@@ -1332,7 +1316,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 4. Base país para análisis contextual
+# 4. Country dataset for contextual analysis
 # ------------------------------------------------------------
 
 country_analysis <- country_context_iris |>
@@ -1367,7 +1351,7 @@ fig_block3_income_overall <- country_analysis |>
   geom_point(
     aes(size = n_institutions),
     alpha = 0.6,
-    color = "#3C5488FF", # Azul científico
+    color = "#3C5488FF", # Scientific blue
     position = position_jitter(width = 0.15, height = 0)
   ) +
   scale_size_continuous(name = "Institutions") +
@@ -1378,7 +1362,6 @@ fig_block3_income_overall <- country_analysis |>
   theme_paper() +
   theme(axis.text.x = element_text(angle = 25, hjust = 1))
 
-fig_block3_income_overall
 
 fig_block3_rd_overall <- country_analysis |>
   filter(!is.na(rd_gdp), !is.na(mean_overall)) |>
@@ -1392,7 +1375,6 @@ fig_block3_rd_overall <- country_analysis |>
   ) +
   theme_paper()
 
-fig_block3_rd_overall
 
 fig_block3_researchers_overall <- country_analysis |>
   filter(!is.na(researchers_pm), !is.na(mean_overall)) |>
@@ -1407,9 +1389,8 @@ fig_block3_researchers_overall <- country_analysis |>
   ) +
   theme_paper()
 
-fig_block3_researchers_overall
 
-# Panel completo
+# Complete panel
 fig_block3_context <- fig_block3_income_overall / fig_block3_rd_overall / fig_block3_researchers_overall +
   plot_annotation(
     title = "Institutional integrity risk and national research system context",
@@ -1420,16 +1401,15 @@ fig_block3_context <- fig_block3_income_overall / fig_block3_rd_overall / fig_bl
     )
   )
 
-fig_block3_context
 
-# ggsave(
-#   filename = file.path(base_dir, "figures/figure_block3_national_context.png"),
-#   plot = fig_block3_context,
-#   width = 9, height = 14, dpi = 300
-# )
+ggsave(
+  filename = file.path(base_dir, "figures/figure_block3_national_context.png"),
+  plot = fig_block3_context,
+  width = 9, height = 14, dpi = 300
+)
 
 # ------------------------------------------------------------
-# 8. Correlaciones entre riesgo agregado y variables nacionales
+# 8. Correlations between aggregate risk and national variables
 # ------------------------------------------------------------
 
 country_correlations <- country_analysis |>
@@ -1455,7 +1435,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 9. Modelos país ponderados por número de instituciones
+# 9. Country models weighted by number of institutions
 # ------------------------------------------------------------
 
 country_model_data <- country_analysis |>
@@ -1485,7 +1465,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 10. Base institucional con variables nacionales
+# 10. Institutional dataset with national variables
 # ------------------------------------------------------------
 
 institution_context <- data_clean |>
@@ -1521,7 +1501,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 11. Modelo multinivel con Overall como outcome
+# 11. Multilevel model with Overall as outcome
 # ------------------------------------------------------------
 
 model_overall_mixed <- lmer(
@@ -1564,7 +1544,7 @@ write_csv(
 )
 
 # ------------------------------------------------------------
-# 12. Perfiles institucionales por grupo de ingresos
+# 12. Institutional profiles by income group
 # ------------------------------------------------------------
 
 profiles_context <- block2_clustered |>
@@ -1590,16 +1570,16 @@ write_csv(
 
 fig_block3_profiles_income <- profile_income_distribution |>
   ggplot(aes(x = income_group_wb, y = percent, fill = profile)) +
-  # Volvemos al contorno negro sólido (color = "black") con una línea fina (linewidth = 0.4)
+  # Return to solid black contour (color = "black") with fine line (linewidth = 0.4)
   geom_col(position = "fill", color = "black", linewidth = 0.4, width = 0.6) +
   scale_y_continuous(labels = percent_format(), expand = expansion(mult = c(0, 0))) +
-  # Paleta de colores súper vivos, contrastantes y profesionales (No Pasteles)
+  # Super vivid, contrasting, and professional color palette (No Pastels)
   scale_fill_manual(values = c(
-    "Profile 1" = "#1F77B4", # Azul fuerte vibrante
-    "Profile 2" = "#D62728", # Rojo sólido
-    "Profile 3" = "#2CA02C", # Verde brillante
-    "Profile 4" = "#9467BD", # Púrpura intenso
-    "Profile 5" = "#FF7F0E"  # Naranja encendido
+    "Profile 1" = "#1F77B4", # Vibrant strong blue
+    "Profile 2" = "#D62728", # Solid red
+    "Profile 3" = "#2CA02C", # Bright green
+    "Profile 4" = "#9467BD", # Intense purple
+    "Profile 5" = "#FF7F0E"  # Bright orange
   )) +
   labs(
     title = "Institutional risk profiles by World Bank income group",
@@ -1613,11 +1593,10 @@ fig_block3_profiles_income <- profile_income_distribution |>
     legend.position = "bottom"
   )
 
-fig_block3_profiles_income
 
-# Las gráficas siguen configuradas para guardarse solo de forma manual.
-# ggsave(
-#   filename = file.path(base_dir, "figures/block3_profiles_by_income_group.png"),
-#   plot = fig_block3_profiles_income,
-#   width = 8, height = 6, dpi = 300
-# )
+# Graphs are still set to be saved manually.
+ggsave(
+  filename = file.path(base_dir, "figures/block3_profiles_by_income_group.png"),
+  plot = fig_block3_profiles_income,
+  width = 8, height = 6, dpi = 300
+)
