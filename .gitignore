@@ -1,0 +1,15 @@
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# Generated outputs (reproducible from code)
+outputs/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Manuscript (context only, not for public repository)
+manuscript.docx
