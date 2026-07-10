@@ -1,0 +1,29 @@
+variable,description,source,analysis_level,used_in,transformation_or_coding
+id,Institution identifier extracted from SCImago IRIS,SCImago IRIS,Institution,Data cleaning; institutional analyses; profile assignment,Raw
+institution,Name of the higher education institution,SCImago IRIS,Institution,Descriptive analyses; institutional profile assignment,Whitespace cleaned; raw text
+country,"Country or territory code used by SCImago IRIS, harmonized where needed for World Bank and map matching",SCImago IRIS,Institution/Country,All analyses; country aggregation; World Bank linkage,Raw; used as ISO3-style join key
+sir_rank,SCImago Institutions Ranking position,SCImago IRIS,Institution,Descriptive analyses; multilevel model,Raw; log1p-transformed and standardized in multilevel model
+overall,Institutional Overall IRIS risk score,SCImago IRIS,Institution,Descriptive analyses; country-level summaries; weighted country regression outcome; multilevel model outcome; profile characterization,Raw
+risk,SCImago IRIS institutional risk category,SCImago IRIS,Institution,Descriptive analyses; profile characterization,"Ordered categorical: very low, low, medium, significant"
+output,Institutional scientific output,SCImago IRIS,Institution,Descriptive analyses; multilevel model,Raw; log1p-transformed and standardized in multilevel model
+multi_affiliation,IRIS indicator capturing multi-affiliation patterns,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+retracted_output,IRIS indicator capturing output associated with retracted publications,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+self_citation,IRIS indicator capturing institutional self-citation patterns,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+discontinued_journals_output,IRIS indicator capturing output in discontinued journals,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+hyperauthored_output,IRIS indicator capturing output in hyperauthored publications,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+leadership_impact_gap,IRIS indicator capturing gaps between institutional leadership and impact patterns,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+hyperprolific_authors,IRIS indicator capturing hyperprolific author patterns linked to the institution,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+institutional_journal_output,IRIS indicator capturing output in institutional journals,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+redundant_output,IRIS indicator capturing redundant or potentially overlapping output patterns,SCImago IRIS,Institution,PCA; k-means clustering; profile characterization,Winsorized at p1/p99 and standardized as z-score for PCA/clustering
+profile,Institutional risk profile assigned by k-means clustering,Derived from analysis,Institution,Profile analysis; income-group profile distribution,Categorical: Profile 1 to Profile 5
+cluster_raw,Original numerical k-means cluster label before ordering profiles by mean Overall score,Derived from analysis,Institution,Internal clustering output; profile assignment,Raw k-means cluster ID
+n_institutions,Number of institutions represented within each country,Derived from SCImago IRIS,Country,Country-level summaries; map inclusion; weighted country-level regression,Raw count; log1p-transformed and standardized in weighted regression
+mean_overall,Mean institutional Overall IRIS risk score within each country,Derived from SCImago IRIS,Country,Country-level analysis; maps; correlations; weighted regression,Raw country-level mean
+median_overall,Median institutional Overall IRIS risk score within each country,Derived from SCImago IRIS,Country,Country-level descriptive summaries,Raw country-level median
+pct_significant,Percentage of institutions classified as significant risk within each country,Derived from SCImago IRIS,Country,Country-level analysis; maps; correlations,Raw percentage; country-level summaries restricted to countries with at least 10 institutions in main analyses
+income_group_wb,World Bank income group classification,World Bank,Country,Country-level contextual analysis; profile distribution by income group; regression models,"Categorical: low income, lower middle income, upper middle income, high income"
+region_wb,World Bank region classification,World Bank,Country,Data coverage and contextual description,Categorical
+rd_gdp,Research and development expenditure as percentage of GDP,World Bank World Development Indicators,Country,Correlations; weighted country-level regression; multilevel model,Most recent non-missing value from 2015 onward; z-score in models
+rd_gdp_year,Year corresponding to the most recent non-missing R&D expenditure value,World Bank World Development Indicators,Country,Data coverage and reproducibility,Raw year
+researchers_pm,Researchers in R&D per million people,World Bank World Development Indicators,Country,Correlations; weighted country-level regression; multilevel model,Most recent non-missing value from 2015 onward; log1p-transformed and standardized in models
+researchers_pm_year,Year corresponding to the most recent non-missing researchers per million value,World Bank World Development Indicators,Country,Data coverage and reproducibility,Raw year
