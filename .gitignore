@@ -10,6 +10,3 @@ outputs/
 # OS files
 Thumbs.db
 .DS_Store
-
-# Manuscript (context only, not for public repository)
-manuscript.docx
