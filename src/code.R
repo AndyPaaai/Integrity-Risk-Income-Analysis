@@ -1,36 +1,38 @@
 # ==============================================================================
-# SCImago IRIS: complete reproducible analysis 
+# SCImago IRIS: complete reproducible analysis
+# Scientific Reports revision / repository v2.0
 # ==============================================================================
 #
 # Target software: R 4.4.2
 #
-# Recommended command:
-# Rscript SCImago_IRIS_complete_revised_analysis.R \
+# Recommended command (from the repository root):
+# Rscript src/code.R \
 #   data/Scimago_IRIS_Index_Data.csv \
 #   data/block3_wdi_raw_download.csv \
-#   outputs
+#   outputs_revised
 #
 # Arguments:
 #   1. Institution-level SCImago IRIS CSV.
 #   2. Fixed World Bank WDI snapshot CSV. If omitted or unavailable, the script
 #      downloads the indicators and writes a new snapshot; exact reproduction of
-#      the published results requires the archived snapshot.
-#   3. Output directory.
+#      the archived results requires the fixed snapshot used in the study.
+#   3. Output directory (default: outputs_revised).
 #
-# Statistical decisions retained in the revised manuscript:
-#   - Four prespecified Spearman correlations.
-#   - Two-sided asymptotic P values.
-#   - Percentile 95% CIs from 10,000 country-level bootstrap resamples.
-#   - Holm adjustment across the four correlation tests.
-#   - Conventional model-based inference for the weighted regression.
-#   - Leave-one-country-out and influence diagnostics.
-#   - Primary multilevel model retaining the verified Overall = 37.599 value.
-#   - Sensitivities excluding that institution and restricting to countries
-#     represented by at least 10 institutions.
+# IMPORTANT REPRODUCIBILITY NOTES
+#   - The nine AHP weights below are used ONLY for descriptive decomposition and
+#     validation of the supplied IRIS Overall score.
+#   - PCA and k-means remain UNWEIGHTED and use winsorized, standardized values.
+#   - AHP decomposition uses the ORIGINAL supplied IRIS indicator values, never
+#     the *_w winsorized columns or clustering z scores.
+#   - The supplied Overall score is NEVER replaced by a reconstructed value.
+#     Published indicators/Overall are rounded; differences <= 0.001 are treated
+#     as rounding-compatible.
+#   - "significant" is a structural risk category supplied by SCImago IRIS. The
+#     Tukey fence calculated below is an independent descriptive check only.
 #
-# The script writes Supplementary Tables S1-S8 as sectioned rectangular CSV
-# files. For tables with several analytical panels, the `section` column
-# identifies the original panel or worksheet.
+# The script writes Supplementary Tables S1-S8 as sectioned rectangular CSVs.
+# For tables with several analytical panels, the `section` column identifies the
+# corresponding panel/worksheet.
 
 # ------------------------------------------------------------------------------
 # 0. Setup
@@ -130,7 +132,7 @@ if (!is.na(wdi_snapshot_file) && file.exists(wdi_snapshot_file)) {
 }
 
 # ------------------------------------------------------------------------------
-# 1. Helper functions and labels
+# 1. Helper functions, labels, and published AHP weights
 # ------------------------------------------------------------------------------
 
 risk_indicator_vars <- c(
@@ -157,6 +159,30 @@ indicator_labels <- c(
   hyperprolific_authors = "Hyperprolific authors",
   institutional_journal_output = "Institutional journal output",
   redundant_output = "Redundant output"
+)
+
+# Published AHP weights. These are descriptive/validation weights ONLY.
+ahp_weights <- c(
+  multi_affiliation = 0.10,
+  retracted_output = 0.30,
+  self_citation = 0.05,
+  discontinued_journals_output = 0.20,
+  hyperauthored_output = 0.05,
+  leadership_impact_gap = 0.05,
+  hyperprolific_authors = 0.10,
+  institutional_journal_output = 0.10,
+  redundant_output = 0.05
+)
+
+stopifnot(
+  identical(names(ahp_weights), risk_indicator_vars),
+  abs(sum(ahp_weights) - 1) < 1e-12
+)
+
+ahp_weight_table <- tibble(
+  indicator_variable = risk_indicator_vars,
+  indicator = unname(indicator_labels[risk_indicator_vars]),
+  ahp_weight = unname(ahp_weights[risk_indicator_vars])
 )
 
 iris_colors <- c(
@@ -250,7 +276,11 @@ write_sectioned_csv <- function(
           section_row = row_number(),
           title = if_else(row_number() == 1L, title, NA_character_),
           description = if_else(row_number() == 1L, description, NA_character_),
-          notes = if_else(row_number() == 1L, paste(notes, collapse = " | "), NA_character_),
+          notes = if_else(
+            row_number() == 1L,
+            paste(notes, collapse = " | "),
+            NA_character_
+          ),
           .before = 1
         )
     }
@@ -321,7 +351,7 @@ rename_fixed_terms <- function(data) {
 }
 
 # ------------------------------------------------------------------------------
-# 2. Import, clean, and validate the institution-level dataset
+# 2. Import, clean, validate, and reproduce category/Overall checks
 # ------------------------------------------------------------------------------
 
 raw_data <- read_csv(
@@ -362,6 +392,78 @@ stopifnot(
   abs(max(data_clean$overall, na.rm = TRUE) - 37.599) < 1e-9
 )
 
+# AHP reconstruction is a validation diagnostic only. It does NOT replace Overall.
+ahp_complete <- data_clean |>
+  filter(
+    !is.na(overall),
+    if_all(all_of(risk_indicator_vars), ~ !is.na(.x))
+  )
+
+ahp_matrix <- as.matrix(ahp_complete |> select(all_of(risk_indicator_vars)))
+ahp_complete$weighted_reconstructed_overall <- as.numeric(
+  ahp_matrix %*% ahp_weights[risk_indicator_vars]
+)
+ahp_complete$absolute_reconstruction_difference <- abs(
+  ahp_complete$overall - ahp_complete$weighted_reconstructed_overall
+)
+
+overall_reconstruction_check <- ahp_complete |>
+  summarise(
+    complete_institutions_n = n(),
+    maximum_absolute_difference = max(absolute_reconstruction_difference),
+    mean_absolute_difference = mean(absolute_reconstruction_difference)
+  )
+
+stopifnot(overall_reconstruction_check$maximum_absolute_difference <= 0.001)
+
+# Independent check of the observed medium/significant boundary.
+overall_q1 <- unname(quantile(data_clean$overall, 0.25, na.rm = TRUE, type = 7))
+overall_q3 <- unname(quantile(data_clean$overall, 0.75, na.rm = TRUE, type = 7))
+overall_iqr_tukey <- overall_q3 - overall_q1
+tukey_upper_fence <- overall_q3 + 1.5 * overall_iqr_tukey
+max_medium_overall <- max(
+  data_clean$overall[as.character(data_clean$risk) == "medium"],
+  na.rm = TRUE
+)
+min_significant_overall <- min(
+  data_clean$overall[as.character(data_clean$risk) == "significant"],
+  na.rm = TRUE
+)
+iris_significant_flag <- as.character(data_clean$risk) == "significant"
+tukey_high_outlier_flag <- data_clean$overall > tukey_upper_fence
+tukey_category_mismatch_n <- sum(
+  iris_significant_flag != tukey_high_outlier_flag,
+  na.rm = TRUE
+)
+
+category_boundary_check <- tibble(
+  metric = c(
+    "Maximum Overall among SCImago medium-category institutions",
+    "Minimum Overall among SCImago significant-category institutions",
+    "Overall Q1",
+    "Overall Q3",
+    "Overall IQR",
+    "Independent Tukey upper fence (Q3 + 1.5*IQR)",
+    "SCImago/Tukey classification mismatches, n"
+  ),
+  value = c(
+    max_medium_overall,
+    min_significant_overall,
+    overall_q1,
+    overall_q3,
+    overall_iqr_tukey,
+    tukey_upper_fence,
+    tukey_category_mismatch_n
+  )
+)
+
+stopifnot(
+  abs(max_medium_overall - 1.093) < 5e-4,
+  abs(min_significant_overall - 1.099) < 5e-4,
+  abs(tukey_upper_fence - 1.1065) < 5e-5,
+  tukey_category_mismatch_n == 7
+)
+
 write_csv(
   data_clean,
   file.path(data_dir, "Supplementary_Data_S1.csv"),
@@ -374,6 +476,14 @@ missing_summary <- data_clean |>
   arrange(desc(missing_n), variable)
 
 write_csv(missing_summary, file.path(table_dir, "missing_values_summary.csv"))
+write_csv(
+  overall_reconstruction_check,
+  file.path(table_dir, "overall_reconstruction_check.csv")
+)
+write_csv(
+  category_boundary_check,
+  file.path(table_dir, "category_boundary_tukey_check.csv")
+)
 
 # ------------------------------------------------------------------------------
 # 3. Descriptive analyses and country summaries
@@ -437,6 +547,9 @@ s1_panel_b <- risk_distribution |>
     `Median IRIS Overall score` = median_overall,
     `Median scientific output` = median_output
   )
+
+s1_panel_c <- category_boundary_check |>
+  transmute(`Check` = metric, `Value` = value)
 
 country_summary <- data_clean |>
   group_by(country) |>
@@ -649,6 +762,66 @@ block2_clustered <- clustered_raw |>
   left_join(cluster_order, by = "cluster_raw") |>
   mutate(profile = factor(profile, levels = paste0("Profile ", 1:5)))
 
+# Post-hoc AHP decomposition of Profile 5 using ORIGINAL IRIS indicators.
+profile5_data <- block2_clustered |>
+  filter(as.character(profile) == "Profile 5")
+
+profile5_mean_overall <- mean(profile5_data$overall, na.rm = TRUE)
+profile5_indicator_means <- profile5_data |>
+  summarise(across(all_of(risk_indicator_vars), ~ mean(.x, na.rm = TRUE)))
+
+profile5_ahp_decomposition <- tibble(
+  indicator_variable = risk_indicator_vars,
+  indicator = unname(indicator_labels[risk_indicator_vars]),
+  mean_original_indicator = as.numeric(unlist(
+    profile5_indicator_means[1, risk_indicator_vars],
+    use.names = FALSE
+  )),
+  ahp_weight = unname(ahp_weights[risk_indicator_vars])
+) |>
+  mutate(
+    mean_weighted_indicator_contribution = mean_original_indicator * ahp_weight,
+    profile5_published_mean_overall = profile5_mean_overall,
+    contribution_percent_of_published_mean_overall =
+      100 * mean_weighted_indicator_contribution / profile5_published_mean_overall
+  )
+
+profile5_reconstructed_mean_overall <- sum(
+  profile5_ahp_decomposition$mean_weighted_indicator_contribution
+)
+profile5_reconstruction_difference <- abs(
+  profile5_mean_overall - profile5_reconstructed_mean_overall
+)
+profile5_retracted_row <- profile5_ahp_decomposition |>
+  filter(indicator_variable == "retracted_output")
+
+profile5_ahp_summary <- tibble(
+  metric = c(
+    "Profile 5 institutions, n",
+    "Published mean Overall",
+    "Weighted reconstruction from original indicators",
+    "Absolute reconstruction difference",
+    "Mean weighted Retracted output contribution",
+    "Retracted output contribution to published mean Overall (%)"
+  ),
+  value = c(
+    nrow(profile5_data),
+    profile5_mean_overall,
+    profile5_reconstructed_mean_overall,
+    profile5_reconstruction_difference,
+    profile5_retracted_row$mean_weighted_indicator_contribution,
+    profile5_retracted_row$contribution_percent_of_published_mean_overall
+  )
+)
+
+stopifnot(
+  nrow(profile5_data) == 226,
+  abs(profile5_mean_overall - 2.256398) < 5e-6,
+  profile5_reconstruction_difference <= 0.001,
+  abs(profile5_retracted_row$mean_weighted_indicator_contribution - 1.986976) < 5e-6,
+  abs(profile5_retracted_row$contribution_percent_of_published_mean_overall - 88.06) < 0.02
+)
+
 cluster_summary <- block2_clustered |>
   group_by(profile) |>
   summarise(
@@ -715,10 +888,13 @@ write_csv(
   file.path(data_dir, "Supplementary_Data_S2.csv"),
   na = ""
 )
-
 write_csv(pca_scores, file.path(table_dir, "pca_scores.csv"))
 write_csv(indicator_correlations, file.path(table_dir, "indicator_correlations.csv"))
 write_csv(scaling_parameters, file.path(table_dir, "scaling_parameters.csv"))
+write_csv(
+  profile5_ahp_decomposition,
+  file.path(table_dir, "profile5_ahp_decomposition.csv")
+)
 
 # ------------------------------------------------------------------------------
 # 5. World Bank linkage and analytical coverage
@@ -890,7 +1066,8 @@ map_match_summary <- tibble(
 )
 
 # ------------------------------------------------------------------------------
-# 6. Country correlations, weighted regression, and influence analyses
+# 6. Country correlations, predictor collinearity, weighted regression,
+#    and influence analyses
 # ------------------------------------------------------------------------------
 
 correlation_specs <- tribble(
@@ -957,6 +1134,39 @@ country_model_data <- country_analysis |>
   )
 
 stopifnot(nrow(country_model_data) == 59)
+
+# Pearson correlations among the three continuous regression predictors.
+predictor_correlation_vars <- c(
+  "rd_gdp_z",
+  "researchers_pm_log_z",
+  "n_institutions_log_z"
+)
+predictor_correlation_labels <- c(
+  rd_gdp_z = "R&D expenditure, standardized",
+  researchers_pm_log_z = "Log researcher density, standardized",
+  n_institutions_log_z = "Log number of institutions, standardized"
+)
+
+predictor_pearson_matrix_raw <- cor(
+  country_model_data |> select(all_of(predictor_correlation_vars)),
+  method = "pearson",
+  use = "complete.obs"
+)
+
+predictor_pearson_matrix <- predictor_pearson_matrix_raw |>
+  as.data.frame() |>
+  rownames_to_column("predictor") |>
+  mutate(predictor = recode(predictor, !!!predictor_correlation_labels)) |>
+  rename_with(
+    ~ unname(predictor_correlation_labels[.x]),
+    all_of(predictor_correlation_vars)
+  )
+
+stopifnot(
+  abs(predictor_pearson_matrix_raw["rd_gdp_z", "researchers_pm_log_z"] - 0.743) < 5e-4,
+  abs(predictor_pearson_matrix_raw["rd_gdp_z", "n_institutions_log_z"] - 0.203) < 5e-4,
+  abs(predictor_pearson_matrix_raw["researchers_pm_log_z", "n_institutions_log_z"] - (-0.004)) < 5e-4
+)
 
 country_model_overall <- lm(
   mean_overall ~
@@ -1092,6 +1302,10 @@ country_analysis_coverage <- bind_rows(
 )
 
 write_csv(country_correlations, file.path(table_dir, "country_correlations.csv"))
+write_csv(
+  predictor_pearson_matrix,
+  file.path(table_dir, "predictor_pearson_correlations.csv")
+)
 write_csv(weighted_regression, file.path(table_dir, "weighted_regression.csv"))
 write_csv(loo_estimates, file.path(table_dir, "leave_one_country_out.csv"))
 write_csv(
@@ -1159,6 +1373,79 @@ primary_mixed_model <- lmer(
 max_overall_index <- which.max(institution_model_data$overall)
 verified_maximum <- institution_model_data[max_overall_index, ]
 
+# AHP decomposition of the verified extreme observation, using ORIGINAL values.
+extreme_original_values <- as.numeric(unlist(
+  verified_maximum[1, risk_indicator_vars],
+  use.names = FALSE
+))
+
+extreme_ahp_decomposition <- tibble(
+  indicator_variable = risk_indicator_vars,
+  indicator = unname(indicator_labels[risk_indicator_vars]),
+  original_indicator_value = extreme_original_values,
+  ahp_weight = unname(ahp_weights[risk_indicator_vars])
+) |>
+  mutate(
+    weighted_indicator_contribution = original_indicator_value * ahp_weight,
+    published_overall = verified_maximum$overall[[1]],
+    contribution_percent_of_published_overall =
+      100 * weighted_indicator_contribution / published_overall
+  )
+
+extreme_reconstructed_overall <- sum(
+  extreme_ahp_decomposition$weighted_indicator_contribution
+)
+extreme_reconstruction_difference <- abs(
+  extreme_reconstructed_overall - verified_maximum$overall[[1]]
+)
+extreme_retracted_row <- extreme_ahp_decomposition |>
+  filter(indicator_variable == "retracted_output")
+extreme_other_eight_contribution <- sum(
+  extreme_ahp_decomposition$weighted_indicator_contribution[
+    extreme_ahp_decomposition$indicator_variable != "retracted_output"
+  ]
+)
+
+extreme_ahp_summary <- tibble(
+  metric = c(
+    "Institution ID",
+    "Scientific output",
+    "Published Overall",
+    "Weighted reconstruction from original indicators",
+    "Absolute reconstruction difference",
+    "Retracted output original indicator value",
+    "Retracted output AHP weight",
+    "Retracted output weighted contribution",
+    "Retracted output contribution to published Overall (%)",
+    "Other eight weighted components combined"
+  ),
+  value = c(
+    as.character(verified_maximum$id[[1]]),
+    as.character(verified_maximum$output[[1]]),
+    as.character(verified_maximum$overall[[1]]),
+    as.character(extreme_reconstructed_overall),
+    as.character(extreme_reconstruction_difference),
+    as.character(extreme_retracted_row$original_indicator_value),
+    as.character(extreme_retracted_row$ahp_weight),
+    as.character(extreme_retracted_row$weighted_indicator_contribution),
+    as.character(extreme_retracted_row$contribution_percent_of_published_overall),
+    as.character(extreme_other_eight_contribution)
+  )
+)
+
+stopifnot(
+  verified_maximum$id[[1]] == 3194,
+  verified_maximum$institution[[1]] == "Universidad Tecnologica Centroamericana",
+  verified_maximum$country[[1]] == "HND",
+  verified_maximum$output[[1]] == 544,
+  abs(verified_maximum$overall[[1]] - 37.599) < 1e-9,
+  abs(extreme_retracted_row$original_indicator_value - 122.964) < 5e-4,
+  abs(extreme_retracted_row$weighted_indicator_contribution - 36.8892) < 5e-5,
+  abs(extreme_retracted_row$contribution_percent_of_published_overall - 98.1) < 0.15,
+  abs(extreme_other_eight_contribution - 0.7104) < 5e-4,
+  extreme_reconstruction_difference <= 0.001
+)
+
 multilevel_influence_diagnostics <- institution_model_data |>
   transmute(
     id,
@@ -1177,6 +1464,10 @@ stopifnot(max_residual_id == verified_maximum$id)
 write_csv(
   multilevel_influence_diagnostics,
   file.path(table_dir, "multilevel_influence_diagnostics.csv")
+)
+write_csv(
+  extreme_ahp_decomposition,
+  file.path(table_dir, "verified_maximum_ahp_decomposition.csv")
 )
 
 without_maximum_data <- institution_model_data[-max_overall_index, , drop = FALSE]
@@ -1270,6 +1561,7 @@ influential_observation <- institution_model_data |>
     institution,
     country_code = country,
     iris_overall_score = overall,
+    scientific_output = output,
     retracted_output
   )
 
@@ -1309,17 +1601,20 @@ profile_income_distribution <- profiles_context |>
   filter(!is.na(income_group_wb), !is.na(profile)) |>
   count(income_group_wb, profile, name = "n") |>
   group_by(income_group_wb) |>
-  mutate(percent = n / sum(n) * 100) |>
+  mutate(
+    income_group_total = sum(n),
+    percent = n / income_group_total * 100
+  ) |>
   ungroup()
 
 stopifnot(sum(profile_income_distribution$n) == 5360)
 write_csv(
   profile_income_distribution,
-  file.path(table_dir, "profiles_by_income_group.csv")
+  file.path(table_dir, "profile_income_distribution.csv")
 )
 
 # ------------------------------------------------------------------------------
-# 9. Supplementary Tables S1-S8
+# 9. Assemble Supplementary Tables S1-S8
 # ------------------------------------------------------------------------------
 
 s3_variance <- pca_variance |>
@@ -1331,31 +1626,34 @@ s3_variance <- pca_variance |>
   )
 
 s3_loadings <- pca_loadings |>
-  transmute(
+  rename(
     `Indicator variable` = indicator_variable,
-    `Indicator` = indicator,
-    across(starts_with("PC"))
+    `Indicator` = indicator
   )
 
 s4_inclusion <- inclusion_summary |>
   transmute(`Item` = item, `Institutions, n` = institutions_n)
 
 s4_parameters <- tribble(
-  ~Parameter, ~Value, ~Definition,
-  "Analytical sample", "5470",
-  "Institutions with complete values for all nine indicators",
+  ~Parameter, ~Value, ~Description,
+  "Analytical sample", as.character(nrow(block2_complete)),
+  "Institutions with complete values for all nine IRIS indicators",
   "Winsorization", "1st and 99th percentiles",
-  "Applied separately to each indicator",
-  "Standardization", "z score", "Applied after winsorization",
-  "Random seed", "2026", "Used for k-means and silhouette sampling",
-  "Candidate k values", "2–8",
-  "Evaluated using total within-cluster sum of squares and silhouette width",
-  "Silhouette sample", "3000",
-  "Institutions sampled for diagnostic silhouette calculations",
-  "Diagnostic nstart", "50", "Random initializations for k = 2–8",
+  "Applied separately to each of the nine indicators before standardization",
+  "Standardization", "z score",
+  "Applied after winsorization",
+  "Random seed", "2026",
+  "Base seed used for reproducible sampling and final clustering",
+  "Candidate k", "2-8",
+  "Range evaluated using elbow and silhouette diagnostics",
+  "Silhouette sample, n", as.character(silhouette_sample_size),
+  "Random sample used to calculate silhouette widths",
+  "Diagnostic nstart", "50",
+  "Random initializations for each k diagnostic model",
   "Diagnostic maximum iterations", "200",
-  "Maximum iterations for candidate k = 2–8 models",
-  "Final k", "5", "Retained for substantive interpretability",
+  "Maximum iterations for each k diagnostic model",
+  "Final k", "5",
+  "Retained for substantive interpretability",
   "Final nstart", "100",
   "Random initializations for the final k = 5 solution",
   "Final maximum iterations", "500",
@@ -1416,6 +1714,23 @@ s4_winsor <- winsor_thresholds |>
     `1st percentile` = p01,
     `99th percentile` = p99
   )
+
+s4_profile5_ahp <- profile5_ahp_decomposition |>
+  transmute(
+    `Exploratory profile` = "Profile 5",
+    `Profile institutions, n` = nrow(profile5_data),
+    `Published mean IRIS Overall score` = profile5_published_mean_overall,
+    `Indicator variable` = indicator_variable,
+    `Indicator` = indicator,
+    `Mean original indicator value` = mean_original_indicator,
+    `AHP weight` = ahp_weight,
+    `Mean weighted indicator contribution` = mean_weighted_indicator_contribution,
+    `Contribution to published mean Overall (%)` =
+      contribution_percent_of_published_mean_overall
+  )
+
+s4_profile5_ahp_summary <- profile5_ahp_summary |>
+  transmute(`Metric` = metric, `Value` = value)
 
 regression_country_codes <- country_model_data$country
 s5_context_by_country <- country_context_iris |>
@@ -1494,6 +1809,8 @@ s6_correlations <- country_correlations |>
     `Unadjusted P value` = p_unadjusted,
     `Holm-adjusted P value` = p_holm
   )
+
+s6_predictor_pearson <- predictor_pearson_matrix
 
 s6_regression <- weighted_regression |>
   transmute(
@@ -1584,11 +1901,29 @@ s7_influential <- influential_observation |>
     `Institution` = institution,
     `Country code` = country_code,
     `IRIS Overall score` = iris_overall_score,
+    `Scientific output` = scientific_output,
     `Retracted output` = retracted_output
   )
 
-# The variable dictionary is explicit so the analytical meaning of each raw and
-# derived field remains versioned with the code.
+s7_extreme_ahp <- extreme_ahp_decomposition |>
+  transmute(
+    `Institution ID` = verified_maximum$id[[1]],
+    `Institution` = verified_maximum$institution[[1]],
+    `Country code` = verified_maximum$country[[1]],
+    `Scientific output` = verified_maximum$output[[1]],
+    `Published IRIS Overall score` = published_overall,
+    `Indicator variable` = indicator_variable,
+    `Indicator` = indicator,
+    `Original indicator value` = original_indicator_value,
+    `AHP weight` = ahp_weight,
+    `Weighted indicator contribution` = weighted_indicator_contribution,
+    `Contribution to published Overall (%)` = contribution_percent_of_published_overall
+  )
+
+s7_extreme_ahp_summary <- extreme_ahp_summary |>
+  transmute(`Metric` = metric, `Value` = value)
+
+# Explicit variable dictionary.
 s8_dictionary <- tribble(
   ~Variable, ~Definition, ~Source, ~`Analytical level`, ~`Used in`, ~`Transformation or coding`,
   "id", "Institution identifier extracted from SCImago IRIS", "SCImago IRIS",
@@ -1601,73 +1936,43 @@ s8_dictionary <- tribble(
   "All analyses; country aggregation; World Bank linkage",
   "Raw; used as ISO3-style join key",
   "sir_rank", "SCImago Institutions Ranking position", "SCImago IRIS",
-  "Institution", "Descriptive analyses; multilevel model",
-  "Raw; log1p-transformed and standardized in multilevel model",
-  "overall", "Institution-level IRIS Overall score", "SCImago IRIS",
-  "Institution",
-  "Descriptive analyses; country summaries; weighted regression; multilevel model; profile characterization",
-  "Raw",
-  "risk", "IRIS structural risk category", "SCImago IRIS", "Institution",
-  "Descriptive analyses; profile characterization",
-  "Ordered categorical: very low, low, medium, significant",
-  "output", "Institutional scientific output", "SCImago IRIS", "Institution",
-  "Descriptive analyses; multilevel model",
-  "Raw; log1p-transformed and standardized in multilevel model",
-  "multi_affiliation", "IRIS indicator capturing multi-affiliation patterns",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "retracted_output", "IRIS indicator capturing output associated with retracted publications",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "self_citation", "IRIS indicator capturing institutional self-citation patterns",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "discontinued_journals_output", "IRIS indicator capturing output in discontinued journals",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "hyperauthored_output", "IRIS indicator capturing output in hyperauthored publications",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "leadership_impact_gap", "IRIS indicator capturing gaps between leadership and impact patterns",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "hyperprolific_authors", "IRIS indicator capturing hyperprolific author patterns",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "institutional_journal_output", "IRIS indicator capturing output in institutional journals",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "redundant_output", "IRIS indicator capturing redundant or potentially overlapping output patterns",
-  "SCImago IRIS", "Institution", "PCA; k-means; profile characterization",
-  "Winsorized at p1/p99 and standardized for PCA/clustering",
-  "profile", "Exploratory institutional profile assigned by k-means clustering",
-  "Derived from analysis", "Institution",
-  "Profile characterization; distribution by income group",
-  "Profile 1 to Profile 5; ordered by profile mean IRIS Overall score",
-  "cluster_raw", "Original numerical k-means cluster label before profile ordering",
-  "Derived from analysis", "Institution", "Internal clustering output", "Raw k-means cluster ID",
-  "profile_mean_overall", "Mean IRIS Overall score of the exploratory profile to which the institution was assigned",
-  "Derived from analysis", "Profile/Institution",
-  "Ordering and labeling of profiles; Supplementary Data S2",
-  "Profile-level mean repeated for assigned institutions",
-  "n_institutions", "Number of institutions represented within each country",
-  "Derived from SCImago IRIS", "Country",
-  "Country summaries; map inclusion; weighted regression",
-  "Raw count; log1p-transformed and standardized in weighted regression",
-  "mean_overall", "Mean institution-level IRIS Overall score within each country",
-  "Derived from SCImago IRIS", "Country",
-  "Country analysis; maps; correlations; weighted regression", "Raw country mean",
-  "median_overall", "Median institution-level IRIS Overall score within each country",
-  "Derived from SCImago IRIS", "Country", "Country descriptive summaries", "Raw country median",
-  "pct_significant", "Percentage of institutions in the IRIS significant structural risk category within each country",
-  "Derived from SCImago IRIS", "Country",
-  "Country analysis; maps; correlations", "Raw percentage",
-  "income_group_wb", "World Bank income group classification", "World Bank",
-  "Country", "Contextual analyses; profile distribution; regression models",
-  "Low, lower middle, upper middle, or high income",
-  "region_wb", "World Bank region classification", "World Bank", "Country",
-  "Coverage and contextual description", "Categorical",
-  "rd_gdp", "R&D expenditure as percentage of GDP",
+  "Institution", "Descriptive analyses; multilevel model", "Raw numeric; log1p and z score in multilevel model",
+  "overall", "IRIS Overall score supplied by SCImago", "SCImago IRIS",
+  "Institution", "Descriptive analyses; outcome in country aggregation and multilevel model",
+  "Raw supplied score; never replaced by AHP reconstruction",
+  "risk", "IRIS structural risk category supplied by SCImago", "SCImago IRIS",
+  "Institution", "Descriptive analyses; profile characterization",
+  "Ordered factor: very low, low, medium, significant",
+  "output", "Institutional scientific output supplied by SCImago", "SCImago IRIS",
+  "Institution", "Descriptive analyses; multilevel model", "Raw numeric; log1p and z score in multilevel model",
+  "multi_affiliation", "IRIS multi-affiliation indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "retracted_output", "IRIS retracted-output indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "self_citation", "IRIS self-citation indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "discontinued_journals_output", "IRIS discontinued-journals-output indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "hyperauthored_output", "IRIS hyperauthored-output indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "leadership_impact_gap", "IRIS leadership-impact-gap indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "hyperprolific_authors", "IRIS hyperprolific-authors indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "institutional_journal_output", "IRIS institutional-journal-output indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "redundant_output", "IRIS redundant-output indicator", "SCImago IRIS",
+  "Institution", "PCA; k-means clustering; AHP descriptive decomposition", "Original supplied indicator",
+  "profile", "Exploratory five-profile assignment from k-means", "Derived from SCImago IRIS",
+  "Institution", "Profile characterization; income-group profile distribution",
+  "k = 5 solution; labels ordered by profile mean Overall",
+  "profile_mean_overall", "Mean supplied IRIS Overall score for the assigned exploratory profile",
+  "Derived from SCImago IRIS", "Profile/Institution", "Profile label ordering and supplementary data",
+  "Profile-level value repeated for assigned institutions",
+  "income_group_wb", "World Bank income group", "World Bank WDI",
+  "Country", "Country descriptions; weighted regression; multilevel model; profile distribution",
+  "Valid groups: Low, Lower middle, Upper middle, High income",
+  "rd_gdp", "Research and development expenditure as percentage of GDP",
   "World Bank World Development Indicators", "Country",
   "Correlations; weighted regression; multilevel model",
   "Most recent non-missing value from 2015 onward; standardized in models",
@@ -1714,20 +2019,45 @@ model_dictionary <- tribble(
   "log(1 + x), then z score"
 )
 
-s8_dictionary <- bind_rows(s8_dictionary, winsor_dictionary, model_dictionary)
+ahp_dictionary <- tribble(
+  ~Variable, ~Definition, ~Source, ~`Analytical level`, ~`Used in`, ~`Transformation or coding`,
+  "ahp_weight",
+  "Indicator-specific AHP weight used for descriptive decomposition of the SCImago IRIS Overall score",
+  "SCImago IRIS methodology",
+  "Indicator",
+  "Profile 5 decomposition; verified-maximum decomposition; Overall reconstruction check",
+  "Fixed weight applied to the original supplied indicator value; not used in PCA or k-means",
+  "weighted_indicator_contribution",
+  "Original supplied IRIS indicator value multiplied by its AHP weight",
+  "Derived from SCImago IRIS",
+  "Institution/Profile",
+  "Profile 5 decomposition; verified-maximum decomposition; Overall reconstruction check",
+  "original_indicator_value * ahp_weight; never calculated from winsorized or standardized clustering variables"
+)
 
+s8_dictionary <- bind_rows(
+  s8_dictionary,
+  winsor_dictionary,
+  model_dictionary,
+  ahp_dictionary
+)
+
+# Write Supplementary Tables ----------------------------------------------------
 write_sectioned_csv(
   1,
-  "Supplementary Table S1. Overall characteristics of the institutional dataset and distribution across IRIS structural risk categories.",
-  "Panel A summarizes the full institution-level dataset. Panel B presents counts, percentages, IRIS Overall scores, and scientific output across the four IRIS structural risk categories.",
+  "Supplementary Table S1. Overall characteristics of the institutional dataset, IRIS structural risk categories, and category-boundary check.",
+  "Panels A and B summarize the institutional dataset and SCImago-supplied structural risk categories. Panel C documents the observed medium/significant boundary and an independent Tukey-fence comparison.",
   c(
     "IRIS Overall score and structural risk category are reported as supplied by SCImago IRIS.",
+    "'Significant' is a SCImago structural risk category and is not defined by the Tukey rule.",
+    "The Tukey calculation is an independent descriptive reproducibility check only.",
     "Percentages use all 5,475 institutions as the denominator.",
     "Scientific output is the institutional output variable supplied by SCImago IRIS."
   ),
   list(
     `Panel A - Global` = s1_panel_a,
-    `Panel B - IRIS categories` = s1_panel_b
+    `Panel B - IRIS categories` = s1_panel_b,
+    `Panel C - Category boundary and Tukey check` = s1_panel_c
   ),
   file.path(supp_dir, "Supplementary_Table_S1.csv")
 )
@@ -1762,10 +2092,12 @@ write_sectioned_csv(
 write_sectioned_csv(
   4,
   "Supplementary Table S4. K-means diagnostics and characteristics of the five exploratory institutional profiles.",
-  "Diagnostics for k = 2–8, profile summaries and centroids, dominant indicators, structural risk category distributions, and winsorization thresholds.",
+  "Diagnostics for k = 2–8, profile summaries and centroids, dominant indicators, structural risk category distributions, winsorization thresholds, and a post hoc descriptive AHP decomposition of Profile 5.",
   c(
     "Profiles are exploratory indicator configurations, not definitive institutional classes.",
     "IRIS Overall score and structural risk category were not clustering inputs.",
+    "The AHP decomposition is descriptive and uses the original supplied IRIS indicator values; it does not alter PCA or k-means.",
+    "Weighted reconstruction is compared with the supplied Overall only as a rounding-tolerant reproducibility check (tolerance 0.001).",
     "Diagnostic models used iter.max = 200; the final k = 5 model used iter.max = 500."
   ),
   list(
@@ -1776,7 +2108,9 @@ write_sectioned_csv(
     `Profile centroids z` = s4_centroids,
     `Dominant indicators` = s4_dominant,
     `IRIS categories by profile` = s4_risk_by_profile,
-    `Winsor thresholds` = s4_winsor
+    `Winsor thresholds` = s4_winsor,
+    `Profile 5 AHP decomposition` = s4_profile5_ahp,
+    `Profile 5 AHP summary` = s4_profile5_ahp_summary
   ),
   file.path(supp_dir, "Supplementary_Table_S4.csv")
 )
@@ -1808,15 +2142,17 @@ write_sectioned_csv(
 write_sectioned_csv(
   6,
   "Supplementary Table S6. Country-level associations and conventional weighted regression estimates.",
-  "Prespecified Spearman correlations with bootstrap CIs and unadjusted and Holm-adjusted P values, plus conventional weighted regression, leave-one-country-out estimates, and influence diagnostics.",
+  "Prespecified Spearman correlations, Pearson correlations among the three continuous regression predictors, conventional weighted regression, leave-one-country-out estimates, and influence diagnostics.",
   c(
     "Correlation CIs use 10,000 country-level bootstrap resamples.",
-    "The four P values were adjusted as one family using the Holm procedure.",
+    "The four prespecified Spearman-test P values were adjusted as one family using the Holm procedure.",
+    "The Pearson predictor matrix is a descriptive collinearity diagnostic for the 59 complete-case regression countries.",
     "Only conventional model-based regression standard errors and confidence intervals are reported.",
     "Countries were weighted by their number of represented IRIS institutions."
   ),
   list(
     `Spearman correlations` = s6_correlations,
+    `Predictor Pearson correlations` = s6_predictor_pearson,
     `Weighted regression` = s6_regression,
     `Regression summary` = s6_regression_summary,
     `LOO summary` = s6_loo_summary,
@@ -1829,18 +2165,22 @@ write_sectioned_csv(
 write_sectioned_csv(
   7,
   "Supplementary Table S7. Multilevel model estimates, model fit, and influence sensitivity analyses.",
-  "Primary random-intercept model and sensitivity analyses excluding the verified maximum IRIS Overall score and restricting to countries represented by at least 10 institutions.",
+  "Primary random-intercept model, sensitivity analyses, influential-observation details, and a descriptive AHP decomposition of the verified maximum IRIS Overall observation.",
   c(
     "The verified Overall = 37.599 observation was retained in the primary model.",
     "Models were fitted by maximum likelihood.",
-    "The sensitivity analysis was performed after identifying the influential observation and is not described as prespecified."
+    "The sensitivity analysis was performed after identifying the influential observation and is not described as prespecified.",
+    "The AHP decomposition uses original supplied indicator values and does not alter the fitted model.",
+    "Weighted reconstruction is used only as a rounding-tolerant check against the supplied Overall (tolerance 0.001)."
   ),
   list(
     `Model fit summary` = s7_fit,
     `Primary fixed effects` = s7_primary_fixed,
     `Sensitivity fixed effects` = s7_sensitivity_fixed,
     `Random effects` = s7_random,
-    `Influential observation` = s7_influential
+    `Influential observation` = s7_influential,
+    `Verified maximum AHP decomposition` = s7_extreme_ahp,
+    `Verified maximum AHP summary` = s7_extreme_ahp_summary
   ),
   file.path(supp_dir, "Supplementary_Table_S7.csv")
 )
@@ -1852,6 +2192,7 @@ write_sectioned_csv(
   c(
     "IRIS Overall score, IRIS structural risk category, and exploratory institutional profile are distinct constructs.",
     "The nine individual indicators were clustering inputs; Overall score and structural risk category were not.",
+    "AHP weights and weighted contributions are used only for descriptive decomposition/validation and are not clustering inputs.",
     "profile_mean_overall is a profile-level value repeated for assigned institutions and is distinct from the country-level mean_overall variable."
   ),
   list(`Variable dictionary` = s8_dictionary),
@@ -1869,7 +2210,9 @@ main_table_2 <- country_analysis |>
   group_by(income_group_wb) |>
   summarise(
     countries_n = n(),
+    institutions_n = sum(n_institutions),
     mean_overall = mean(mean_overall, na.rm = TRUE),
+    median_overall = median(mean_overall, na.rm = TRUE),
     mean_pct_significant = mean(pct_significant, na.rm = TRUE),
     mean_rd_gdp = mean(rd_gdp, na.rm = TRUE),
     rd_countries_n = sum(!is.na(rd_gdp)),
@@ -1882,54 +2225,53 @@ write_csv(main_table_1, file.path(table_dir, "Main_Table_1.csv"))
 write_csv(main_table_2, file.path(table_dir, "Main_Table_2.csv"))
 
 # ------------------------------------------------------------------------------
-# 11. Figures with revised terminology
+# 11. Figures
 # ------------------------------------------------------------------------------
 
-# Supplementary Figure S1
+# Supplementary Figure S1: global distribution and country representation.
 fig_s1a <- risk_distribution |>
-  ggplot(aes(x = risk, y = institutions_percent, fill = risk)) +
+  ggplot(aes(x = risk, y = institutions_n, fill = risk)) +
   geom_col(width = 0.65, color = "black", linewidth = 0.25) +
-  geom_text(
-    aes(label = paste0(institutions_n, "\n", round(institutions_percent, 1), "%")),
-    vjust = -0.25,
-    size = 3.1,
-    lineheight = 0.9
-  ) +
   scale_fill_manual(values = iris_colors, guide = "none") +
-  scale_x_discrete(labels = c(
-    "very low" = "Very low", "low" = "Low",
-    "medium" = "Medium", "significant" = "Significant"
-  )) +
-  scale_y_continuous(
-    limits = c(0, max(risk_distribution$institutions_percent) * 1.22),
-    expand = expansion(mult = c(0, 0))
-  ) +
+  scale_x_discrete(labels = str_to_title) +
   labs(
-    x = "IRIS structural risk category",
-    y = "Institutions (%)",
-    title = "a  IRIS structural risk categories"
+    title = "a  IRIS structural risk categories",
+    x = NULL,
+    y = "Institutions"
   ) +
   theme_paper()
 
 fig_s1b <- top_countries |>
   mutate(country = fct_reorder(country, n_institutions)) |>
-  ggplot(aes(country, n_institutions)) +
-  geom_col(fill = "#3C5488", width = 0.65) +
-  coord_flip() +
+  ggplot(aes(n_institutions, country)) +
+  geom_col(fill = "grey55", width = 0.65) +
   labs(
-    x = NULL, y = "Institutions, n",
-    title = "b  Countries or territories with the most institutions"
+    title = "b  Countries with the largest institutional representation",
+    x = "Institutions",
+    y = NULL
   ) +
   theme_paper()
 
 fig_s1c <- top_significant |>
   mutate(country = fct_reorder(country, pct_significant)) |>
-  ggplot(aes(country, pct_significant)) +
-  geom_col(fill = "#D95C4F", width = 0.65) +
+  ggplot(aes(pct_significant, country)) +
+  geom_col(fill = iris_colors[["significant"]], width = 0.65) +
   coord_flip() +
   labs(
     x = NULL,
     y = "Institutions in the significant category (%)",
+    title = "c  Highest percentages in the significant category"
+  ) +
+  theme_paper()
+
+# Use a conventional horizontal bar implementation without coord_flip conflict.
+fig_s1c <- top_significant |>
+  mutate(country = fct_reorder(country, pct_significant)) |>
+  ggplot(aes(pct_significant, country)) +
+  geom_col(fill = iris_colors[["significant"]], width = 0.65) +
+  labs(
+    x = "Institutions in the significant category (%)",
+    y = NULL,
     title = "c  Highest percentages in the significant category"
   ) +
   theme_paper()
@@ -1953,7 +2295,7 @@ ggsave(
   height = 15
 )
 
-# Figure 1: geographical distribution
+# Figure 1: geographical distribution.
 map_data_min10 <- map_data |>
   mutate(
     mean_overall_plot = if_else(n_institutions >= 10, mean_overall, NA_real_),
@@ -1985,8 +2327,7 @@ figure_1b <- ggplot(map_data_min10) +
     name = "Institutions in significant category (%)"
   ) +
   labs(
-    title =
-      "b  Institutions in the IRIS significant structural risk category (%)"
+    title = "b  Institutions in the IRIS significant structural risk category (%)"
   ) +
   theme_void(base_size = 11) +
   theme(
@@ -2009,7 +2350,7 @@ ggsave(
   height = 10
 )
 
-# Figure 2: profile heatmap
+# Figure 2: profile heatmap.
 figure_2 <- profile_centroids_long |>
   ggplot(aes(indicator, profile, fill = mean_z)) +
   geom_tile(color = "white", linewidth = 0.7) +
@@ -2017,7 +2358,10 @@ figure_2 <- profile_centroids_long |>
     aes(label = round(mean_z, 2), color = abs(mean_z) > 1.2),
     size = 3.2
   ) +
-  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "white"), guide = "none") +
+  scale_color_manual(
+    values = c("FALSE" = "black", "TRUE" = "white"),
+    guide = "none"
+  ) +
   scale_fill_gradient2(
     low = "#2166AC",
     mid = "white",
@@ -2053,7 +2397,7 @@ ggsave(
   height = 6
 )
 
-# Figure 3: structural categories and PCA distribution
+# Figure 3: structural categories and PCA distribution.
 figure_3a <- risk_by_profile |>
   ggplot(aes(profile, within_profile_percent, fill = risk)) +
   geom_col(position = "fill", color = "black", linewidth = 0.25) +
@@ -2074,7 +2418,7 @@ figure_3b_data <- pca_scores |>
 
 figure_3b <- figure_3b_data |>
   ggplot(aes(PC1, PC2, color = profile)) +
-  geom_point(alpha = 0.75, size = 1.4) +
+  geom_point(alpha = 0.75, size = 1.0) +
   scale_color_manual(
     values = profile_colors,
     name = "Exploratory institutional profile"
@@ -2105,7 +2449,7 @@ ggsave(
   height = 12
 )
 
-# Figure 4: national context
+# Figure 4: national context.
 figure_4a <- country_analysis |>
   filter(!is.na(income_group_wb)) |>
   ggplot(aes(income_group_wb, mean_overall)) +
@@ -2167,7 +2511,7 @@ ggsave(
   height = 15
 )
 
-# Figure 5: profile composition by income group
+# Figure 5: profile composition by income group.
 figure_5 <- profile_income_distribution |>
   ggplot(aes(income_group_wb, percent, fill = profile)) +
   geom_col(position = "fill", color = "black", linewidth = 0.3, width = 0.65) +
@@ -2206,17 +2550,27 @@ expected_fit <- model_fit_summary |>
   select(model, adjusted_icc, marginal_r2, conditional_r2)
 
 print(global_summary)
+print(category_boundary_check)
+print(predictor_pearson_matrix)
+print(profile5_ahp_summary)
+print(extreme_ahp_summary)
 print(country_correlations)
 print(weighted_regression)
 print(expected_fit)
 
+# Core dataset/model checks retained from the revised analysis plus the new
+# reproducibility checks required for the repository revision.
 stopifnot(
   sum(as.character(data_clean$risk) == "significant", na.rm = TRUE) == 365,
   n_distinct(block2_clustered$profile) == 5,
   nrow(country_analysis) == 69,
   sum(country_analysis$n_institutions) == 5213,
   nrow(min10_model_data) == 4718,
-  n_distinct(min10_model_data$country) == 59
+  n_distinct(min10_model_data$country) == 59,
+  overall_reconstruction_check$maximum_absolute_difference <= 0.001,
+  tukey_category_mismatch_n == 7,
+  nrow(profile5_data) == 226,
+  extreme_reconstruction_difference <= 0.001
 )
 
 capture.output(
