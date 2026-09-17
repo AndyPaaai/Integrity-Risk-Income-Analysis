@@ -30,7 +30,7 @@
 #   - "significant" is a structural risk category supplied by SCImago IRIS. The
 #     Tukey fence calculated below is an independent descriptive check only.
 #
-# The script writes Supplementary Tables S1-S8 as sectioned rectangular CSVs.
+# The script writes Supplementary Tables S1-S9 as sectioned rectangular CSVs.
 # For tables with several analytical panels, the `section` column identifies the
 # corresponding panel/worksheet.
 
@@ -265,6 +265,20 @@ write_sectioned_csv <- function(
   sections,
   file
 ) {
+  col_types <- purrr::map(sections, ~ purrr::map_chr(.x, ~ class(.x)[[1]]))
+  all_cols <- unique(unlist(purrr::map(col_types, names)))
+  conflict_cols <- purrr::keep(all_cols, function(col) {
+    types <- purrr::map_chr(col_types, function(ct) {
+      if (col %in% names(ct)) ct[[col]] else NA_character_
+    }) |> stats::na.omit() |> unique()
+    length(types) > 1
+  })
+  if (length(conflict_cols) > 0) {
+    sections <- purrr::map(sections, function(df) {
+      dplyr::mutate(df, dplyr::across(dplyr::any_of(conflict_cols), as.character))
+    })
+  }
+
   combined <- imap_dfr(
     sections,
     function(section_data, section_name) {
@@ -1614,7 +1628,265 @@ write_csv(
 )
 
 # ------------------------------------------------------------------------------
-# 9. Assemble Supplementary Tables S1-S8
+# 8B. Weighting sensitivity analysis
+# ------------------------------------------------------------------------------
+
+# Equal weighting is used only as a sensitivity specification.
+# PCA, k-means clustering, and source-defined structural-risk categories
+# are not recalculated because they do not depend on this composite.
+
+weighting_data <- data_clean |>
+  mutate(
+    equal_weight_overall = rowMeans(
+      across(all_of(risk_indicator_vars)),
+      na.rm = FALSE
+    )
+  )
+
+weighting_complete <- weighting_data |>
+  filter(!is.na(equal_weight_overall), !is.na(overall))
+
+stopifnot(nrow(weighting_complete) == 5470)
+
+s9_composite_agreement <- tibble(
+  metric = c(
+    "Institutions with complete values for all nine indicators",
+    "Spearman correlation with published AHP-weighted Overall",
+    "Pearson correlation with published AHP-weighted Overall",
+    "Maximum equal-weight composite",
+    "Published Overall for the same maximum institution"
+  ),
+  specification = c(
+    "Equal-weight composite",
+    "Equal-weight composite",
+    "Equal-weight composite",
+    paste0(
+      weighting_complete$institution[which.max(weighting_complete$equal_weight_overall)],
+      " (",
+      weighting_complete$country[which.max(weighting_complete$equal_weight_overall)],
+      ")"
+    ),
+    paste0(
+      weighting_complete$institution[which.max(weighting_complete$equal_weight_overall)],
+      " (",
+      weighting_complete$country[which.max(weighting_complete$equal_weight_overall)],
+      ")"
+    )
+  ),
+  n = c(5470, 5470, 5470, 1, 1),
+  value = c(
+    5470,
+    cor(weighting_complete$overall, weighting_complete$equal_weight_overall, method = "spearman"),
+    cor(weighting_complete$overall, weighting_complete$equal_weight_overall, method = "pearson"),
+    max(weighting_complete$equal_weight_overall),
+    weighting_complete$overall[which.max(weighting_complete$equal_weight_overall)]
+  )
+)
+
+equal_country_summary <- weighting_data |>
+  group_by(country) |>
+  summarise(
+    n_equal_weight_complete = sum(!is.na(equal_weight_overall)),
+    mean_equal_weight_overall = mean(equal_weight_overall, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+country_analysis_equal <- country_analysis |>
+  left_join(equal_country_summary, by = "country")
+
+equal_correlation_specs <- tribble(
+  ~predictor, ~x_variable,
+  "R&D expenditure", "rd_gdp",
+  "Researcher density", "researchers_pm"
+)
+
+equal_country_correlations <- pmap_dfr(
+  equal_correlation_specs,
+  function(predictor, x_variable) {
+    pair <- country_analysis_equal |>
+      select(all_of(c(x_variable, "mean_equal_weight_overall"))) |>
+      drop_na()
+
+    test <- suppressWarnings(
+      cor.test(
+        pair[[x_variable]],
+        pair$mean_equal_weight_overall,
+        method = "spearman",
+        exact = FALSE,
+        alternative = "two.sided"
+      )
+    )
+
+    tibble(
+      specification = "Equal-weight composite",
+      predictor = predictor,
+      n = nrow(pair),
+      spearman_rho = unname(test$estimate),
+      p_value = test$p.value
+    )
+  }
+)
+
+published_country_correlations_s9 <- country_correlations |>
+  filter(outcome == "Mean IRIS Overall score") |>
+  transmute(
+    specification = "Published AHP-weighted Overall",
+    predictor,
+    n,
+    spearman_rho,
+    p_value = p_unadjusted
+  )
+
+s9_country_correlations <- bind_rows(
+  published_country_correlations_s9,
+  equal_country_correlations
+) |>
+  arrange(predictor, specification)
+
+country_model_equal <- country_model_data |>
+  left_join(
+    equal_country_summary |>
+      select(country, mean_equal_weight_overall),
+    by = "country"
+  )
+
+stopifnot(
+  nrow(country_model_equal) == 59,
+  all(!is.na(country_model_equal$mean_equal_weight_overall))
+)
+
+country_model_equal_fit <- lm(
+  mean_equal_weight_overall ~
+    rd_gdp_z +
+    researchers_pm_log_z +
+    income_group_wb +
+    n_institutions_log_z,
+  data = country_model_equal,
+  weights = n_institutions
+)
+
+equal_weighted_regression <- broom::tidy(
+  country_model_equal_fit,
+  conf.int = TRUE,
+  conf.level = 0.95
+) |>
+  transmute(
+    specification = "Equal-weight composite",
+    term = recode(term, !!!regression_term_labels),
+    estimate,
+    model_based_se = std.error,
+    t_statistic = statistic,
+    p_value = p.value,
+    ci_low = conf.low,
+    ci_high = conf.high
+  )
+
+published_weighted_regression_s9 <- weighted_regression |>
+  mutate(
+    specification = "Published AHP-weighted Overall",
+    .before = 1
+  )
+
+s9_weighted_regression <- bind_rows(
+  published_weighted_regression_s9,
+  equal_weighted_regression
+)
+
+institution_weighting_context <- institution_context |>
+  mutate(
+    equal_weight_overall = rowMeans(
+      across(all_of(risk_indicator_vars)),
+      na.rm = FALSE
+    )
+  )
+
+institution_equal_model_data <- institution_weighting_context |>
+  filter(
+    !is.na(equal_weight_overall),
+    !is.na(country),
+    !is.na(output_log_z),
+    !is.na(sir_rank_log_z),
+    !is.na(rd_gdp_z),
+    !is.na(researchers_pm_log_z),
+    !is.na(income_group_wb)
+  ) |>
+  mutate(income_group_wb = droplevels(income_group_wb))
+
+stopifnot(
+  nrow(institution_equal_model_data) == 4887,
+  n_distinct(institution_equal_model_data$country) == 110
+)
+
+equal_mixed_formula <- equal_weight_overall ~
+  output_log_z +
+  sir_rank_log_z +
+  rd_gdp_z +
+  researchers_pm_log_z +
+  income_group_wb +
+  (1 | country)
+
+equal_mixed_model <- lmer(
+  equal_mixed_formula,
+  data = institution_equal_model_data,
+  REML = FALSE,
+  control = lmer_control
+)
+
+equal_max_index <- which.max(institution_equal_model_data$equal_weight_overall)
+equal_verified_maximum <- institution_equal_model_data[equal_max_index, ]
+
+stopifnot(equal_verified_maximum$id == verified_maximum$id)
+
+equal_without_maximum_data <- institution_equal_model_data[-equal_max_index, , drop = FALSE]
+
+equal_without_maximum_model <- lmer(
+  equal_mixed_formula,
+  data = equal_without_maximum_data,
+  REML = FALSE,
+  control = lmer_control
+)
+
+s9_multilevel_fit <- bind_rows(
+  model_fit_row(primary_mixed_model, "Published AHP-weighted Overall - primary", institution_model_data),
+  model_fit_row(without_maximum_model, "Published AHP-weighted Overall - excluding verified maximum", without_maximum_data),
+  model_fit_row(equal_mixed_model, "Equal-weight composite - primary", institution_equal_model_data),
+  model_fit_row(equal_without_maximum_model, "Equal-weight composite - excluding verified maximum", equal_without_maximum_data)
+)
+
+s9_equal_fixed <- bind_rows(
+  fixed_effect_table(
+    equal_mixed_model,
+    model_label = "Equal-weight composite - primary",
+    reference_label = "Low income"
+  ),
+  fixed_effect_table(
+    equal_without_maximum_model,
+    model_label = "Equal-weight composite - excluding verified maximum",
+    reference_label = "Low income"
+  )
+) |>
+  rename_fixed_terms()
+
+stopifnot(
+  abs(cor(weighting_complete$overall, weighting_complete$equal_weight_overall, method = "spearman") - 0.8662977) < 1e-5,
+  abs(cor(weighting_complete$overall, weighting_complete$equal_weight_overall, method = "pearson") - 0.8181556) < 1e-5,
+  abs(max(weighting_complete$equal_weight_overall) - 14.1374444) < 1e-5,
+  abs(equal_country_correlations$spearman_rho[equal_country_correlations$predictor == "R&D expenditure"] - (-0.6099817)) < 1e-5,
+  abs(equal_country_correlations$spearman_rho[equal_country_correlations$predictor == "Researcher density"] - (-0.4022815)) < 1e-5,
+  abs(equal_weighted_regression$estimate[equal_weighted_regression$term == "R&D expenditure, standardized"] - (-0.1492332)) < 1e-4,
+  abs(equal_weighted_regression$estimate[equal_weighted_regression$term == "Log researcher density, standardized"] - (-0.0998945)) < 1e-4,
+  abs(s9_multilevel_fit$adjusted_icc[s9_multilevel_fit$model == "Equal-weight composite - primary"] - 0.6516665) < 1e-4,
+  abs(s9_multilevel_fit$adjusted_icc[s9_multilevel_fit$model == "Equal-weight composite - excluding verified maximum"] - 0.2861559) < 1e-4
+)
+
+write_csv(s9_composite_agreement, file.path(table_dir, "weighting_sensitivity_composite_agreement.csv"))
+write_csv(s9_country_correlations, file.path(table_dir, "weighting_sensitivity_country_correlations.csv"))
+write_csv(s9_weighted_regression, file.path(table_dir, "weighting_sensitivity_weighted_regression.csv"))
+write_csv(s9_multilevel_fit, file.path(table_dir, "weighting_sensitivity_multilevel_fit.csv"))
+write_csv(s9_equal_fixed, file.path(table_dir, "weighting_sensitivity_multilevel_fixed_effects.csv"))
+
+# ------------------------------------------------------------------------------
+# 9. Assemble Supplementary Tables S1-S9
 # ------------------------------------------------------------------------------
 
 s3_variance <- pca_variance |>
@@ -2199,6 +2471,145 @@ write_sectioned_csv(
   file.path(supp_dir, "Supplementary_Table_S8.csv")
 )
 
+s9_panel_a <- s9_composite_agreement |>
+  transmute(
+    metric,
+    specification,
+    n = as.integer(n),
+    value,
+    ci_low = NA_real_,
+    ci_high = NA_real_,
+    p_value = NA_real_
+  )
+
+s9_panel_b <- s9_country_correlations |>
+  mutate(
+    specification = factor(
+      specification,
+      levels = c("Published AHP-weighted Overall", "Equal-weight composite")
+    )
+  ) |>
+  arrange(predictor, specification) |>
+  transmute(
+    metric = paste0(predictor, " vs country mean outcome"),
+    specification = as.character(specification),
+    n = as.integer(n),
+    value = spearman_rho,
+    ci_low = NA_real_,
+    ci_high = NA_real_,
+    p_value
+  )
+
+s9_panel_c <- s9_weighted_regression |>
+  filter(
+    term %in% c(
+      "R&D expenditure, standardized",
+      "Log researcher density, standardized",
+      "Log number of institutions, standardized"
+    )
+  ) |>
+  mutate(
+    metric = if_else(
+      term == "Log number of institutions, standardized",
+      "Log number of represented institutions, standardized",
+      term
+    ),
+    metric = factor(
+      metric,
+      levels = c(
+        "R&D expenditure, standardized",
+        "Log researcher density, standardized",
+        "Log number of represented institutions, standardized"
+      )
+    ),
+    specification = factor(
+      specification,
+      levels = c("Published AHP-weighted Overall", "Equal-weight composite")
+    )
+  ) |>
+  arrange(metric, specification) |>
+  transmute(
+    metric = as.character(metric),
+    specification = as.character(specification),
+    n = 59L,
+    value = estimate,
+    ci_low,
+    ci_high,
+    p_value
+  )
+
+s9_panel_d <- bind_rows(
+  s9_multilevel_fit |>
+    transmute(
+      metric = "Adjusted ICC",
+      specification = model,
+      n = as.integer(institutions_n),
+      value = adjusted_icc,
+      ci_low = NA_real_,
+      ci_high = NA_real_,
+      p_value = NA_real_
+    ),
+  s9_multilevel_fit |>
+    filter(model != "Published AHP-weighted Overall - excluding verified maximum") |>
+    rowwise() |>
+    reframe(
+      metric = c("Marginal R2", "Conditional R2"),
+      specification = rep(model, 2),
+      n = rep(as.integer(institutions_n), 2),
+      value = c(marginal_r2, conditional_r2),
+      ci_low = NA_real_,
+      ci_high = NA_real_,
+      p_value = NA_real_
+    )
+)
+
+s9_panel_e <- s9_equal_fixed |>
+  filter(
+    model == "Equal-weight composite - primary",
+    term %in% c(
+      "Log scientific output, standardized",
+      "Log SIR Rank, standardized",
+      "R&D expenditure, standardized",
+      "Log researcher density, standardized"
+    )
+  ) |>
+  mutate(
+    term = factor(
+      term,
+      levels = c(
+        "Log scientific output, standardized",
+        "Log SIR Rank, standardized",
+        "R&D expenditure, standardized",
+        "Log researcher density, standardized"
+      )
+    )
+  ) |>
+  arrange(term) |>
+  transmute(
+    metric = as.character(term),
+    specification = model,
+    n = 4887L,
+    value = round(estimate, 6),
+    ci_low = round(ci_low, 6),
+    ci_high = round(ci_high, 6),
+    p_value = round(p_value, 6)
+  )
+
+write_sectioned_csv(
+  9,
+  "Supplementary Table S9. Sensitivity of IRIS Overall-based findings to an alternative equal-weight indicator specification.",
+  "The nine original standardized IRIS indicators were combined using equal weights (1/9 each) as a transparent sensitivity specification. PCA, k-means profiles, and source-supplied structural-risk categories were not recalculated because they do not depend on this alternative composite.",
+  "Equal weighting is not proposed as a superior weighting scheme and is used only to assess dependence on the published AHP construction. The alternative composite was calculable for 5,470 institutions with complete values for all nine indicators. Country correlations use countries represented by at least 10 institutions. Weighted regression uses the same 59 complete-case countries as the primary analysis. Multilevel models use maximum likelihood and the same covariate specification as the primary model. P values in the weighting-sensitivity panels are descriptive, unadjusted sensitivity-analysis values.",
+  list(
+    `Panel A - Composite agreement` = s9_panel_a,
+    `Panel B - Country-level Spearman associations` = s9_panel_b,
+    `Panel C - Weighted country regression` = s9_panel_c,
+    `Panel D - Multilevel model fit` = s9_panel_d,
+    `Panel E - Equal-weight multilevel fixed effects` = s9_panel_e
+  ),
+  file.path(supp_dir, "Supplementary_Table_S9.csv")
+)
+
 # ------------------------------------------------------------------------------
 # 10. Main manuscript tables
 # ------------------------------------------------------------------------------
@@ -2570,7 +2981,16 @@ stopifnot(
   overall_reconstruction_check$maximum_absolute_difference <= 0.001,
   tukey_category_mismatch_n == 7,
   nrow(profile5_data) == 226,
-  extreme_reconstruction_difference <= 0.001
+  extreme_reconstruction_difference <= 0.001,
+  nrow(weighting_complete) == 5470,
+  abs(cor(weighting_complete$overall, weighting_complete$equal_weight_overall, method = "spearman") - 0.8663) < 0.001,
+  abs(cor(weighting_complete$overall, weighting_complete$equal_weight_overall, method = "pearson") - 0.8182) < 0.001,
+  abs(equal_country_correlations$spearman_rho[equal_country_correlations$predictor == "R&D expenditure"] - (-0.610)) < 0.001,
+  abs(equal_country_correlations$spearman_rho[equal_country_correlations$predictor == "Researcher density"] - (-0.402)) < 0.001,
+  abs(equal_weighted_regression$estimate[equal_weighted_regression$term == "R&D expenditure, standardized"] - (-0.149)) < 0.001,
+  abs(equal_weighted_regression$estimate[equal_weighted_regression$term == "Log researcher density, standardized"] - (-0.100)) < 0.001,
+  abs(s9_multilevel_fit$adjusted_icc[s9_multilevel_fit$model == "Equal-weight composite - primary"] - 0.652) < 0.001,
+  abs(s9_multilevel_fit$adjusted_icc[s9_multilevel_fit$model == "Equal-weight composite - excluding verified maximum"] - 0.286) < 0.001
 )
 
 capture.output(
